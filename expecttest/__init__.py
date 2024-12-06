@@ -277,7 +277,7 @@ def assert_expected_inline(
                 # breadth first)
                 for n in ast.walk(old_ast):
                     if isinstance(n, ast.Expr):
-                        if hasattr(n, "end_lineno"):
+                        if hasattr(n, "end_lineno") and n.end_lineno:
                             assert LINENO_AT_START
                             if n.lineno == start_lineno:
                                 end_lineno = n.end_lineno  # type: ignore[attr-defined]
