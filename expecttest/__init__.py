@@ -156,9 +156,9 @@ def replace_string_literal(
 
     new_string = normalize_nl(new_string)
 
-    delta = [new_string.count("\n")]
-    if delta[0] > 0:
-        delta[0] += 1  # handle the extra \\\n
+    delta = new_string.count("\n")
+    if delta > 0:
+        delta += 1  # handle the extra \\\n
 
     assert start_lineno <= end_lineno
     start = nth_line(src, start_lineno)
@@ -166,6 +166,8 @@ def replace_string_literal(
     assert start <= end
 
     def replace(m: Match[str]) -> str:
+        nonlocal delta
+
         s = new_string
         raw = m.group("raw") == "r"
         if not raw or not ok_for_raw_triple_quoted_string(s, quote=m.group("quote")[0]):
@@ -177,7 +179,7 @@ def replace_string_literal(
                 s = escape_trailing_quote(s, '"').replace('"""', r"\"\"\"")
 
         new_body = "\\\n" + s if "\n" in s and not raw else s
-        delta[0] -= m.group("body").count("\n")
+        delta -= m.group("body").count("\n")
         return "".join(
             [
                 "r" if raw else "",
@@ -189,7 +191,7 @@ def replace_string_literal(
 
     return (
         src[:start] + RE_EXPECT.sub(replace, src[start:end], count=1) + src[end:],
-        delta[0],
+        delta,
     )
 
 
