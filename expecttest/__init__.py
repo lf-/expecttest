@@ -217,6 +217,66 @@ def assert_eq(expect: str, actual: str, *, msg: str) -> None:
         )
 
 
+def _accept_output(
+    fn: str,
+    lineno: int,
+    actual: str,
+    debug_suffix: str,
+) -> None:
+    """
+    Replaces the string literal in file "fn" at lineno with the new string
+    "actual".
+    """
+    print("Accepting new output{} at {}:{}".format(debug_suffix, fn, lineno))
+    with open(fn, "r+") as f:
+        old = f.read()
+        old_ast = ast.parse(old)
+
+        # NB: it's only the traceback line numbers that are wrong;
+        # we reread the file every time we write to it, so AST's
+        # line numbers are correct
+        lineno = EDIT_HISTORY.adjust_lineno(fn, lineno)
+
+        # Conservative assumption to start
+        start_lineno = lineno
+        end_lineno = lineno
+        # Try to give a more accurate bounds based on AST
+        # NB: this walk is in no specified order (in practice it's
+        # breadth first)
+        for n in ast.walk(old_ast):
+            if isinstance(n, ast.Expr):
+                if hasattr(n, "end_lineno") and n.end_lineno:
+                    assert LINENO_AT_START
+                    if n.lineno == start_lineno:
+                        end_lineno = n.end_lineno  # type: ignore[attr-defined]
+                else:
+                    if n.lineno == end_lineno:
+                        start_lineno = n.lineno
+
+        new, delta = replace_string_literal(
+            old, start_lineno, end_lineno, actual
+        )
+
+        assert old != new, (
+            f"Failed to substitute string at {fn}:{lineno}; did you use triple quotes?  "
+            "If this is unexpected, please file a bug report at "
+            "https://github.com/ezyang/expecttest/issues/new "
+            f"with the contents of the source file near {fn}:{lineno}"
+        )
+
+        # Only write the backup file the first time we hit the
+        # file
+        if not EDIT_HISTORY.seen_file(fn):
+            with open(fn + ".bak", "w") as f_bak:
+                f_bak.write(old)
+        f.seek(0)
+        f.truncate(0)
+
+        f.write(new)
+
+    EDIT_HISTORY.record_edit(fn, lineno, delta, actual)
+
+
 def assert_expected_inline(
     actual: str,
     expect: str,
@@ -261,54 +321,7 @@ def assert_expected_inline(
                     )
                 )
                 return
-            print("Accepting new output{} at {}:{}".format(debug_suffix, fn, lineno))
-            with open(fn, "r+") as f:
-                old = f.read()
-                old_ast = ast.parse(old)
-
-                # NB: it's only the traceback line numbers that are wrong;
-                # we reread the file every time we write to it, so AST's
-                # line numbers are correct
-                lineno = EDIT_HISTORY.adjust_lineno(fn, lineno)
-
-                # Conservative assumption to start
-                start_lineno = lineno
-                end_lineno = lineno
-                # Try to give a more accurate bounds based on AST
-                # NB: this walk is in no specified order (in practice it's
-                # breadth first)
-                for n in ast.walk(old_ast):
-                    if isinstance(n, ast.Expr):
-                        if hasattr(n, "end_lineno") and n.end_lineno:
-                            assert LINENO_AT_START
-                            if n.lineno == start_lineno:
-                                end_lineno = n.end_lineno  # type: ignore[attr-defined]
-                        else:
-                            if n.lineno == end_lineno:
-                                start_lineno = n.lineno
-
-                new, delta = replace_string_literal(
-                    old, start_lineno, end_lineno, actual
-                )
-
-                assert old != new, (
-                    f"Failed to substitute string at {fn}:{lineno}; did you use triple quotes?  "
-                    "If this is unexpected, please file a bug report at "
-                    "https://github.com/ezyang/expecttest/issues/new "
-                    f"with the contents of the source file near {fn}:{lineno}"
-                )
-
-                # Only write the backup file the first time we hit the
-                # file
-                if not EDIT_HISTORY.seen_file(fn):
-                    with open(fn + ".bak", "w") as f_bak:
-                        f_bak.write(old)
-                f.seek(0)
-                f.truncate(0)
-
-                f.write(new)
-
-            EDIT_HISTORY.record_edit(fn, lineno, delta, actual)
+            _accept_output(fn=fn, lineno=lineno, actual=actual, debug_suffix=debug_suffix)
     else:
         help_text = (
             "To accept the new output, re-run test with "
