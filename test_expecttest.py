@@ -18,6 +18,7 @@ from hypothesis.strategies import booleans, composite, integers, sampled_from, t
 
 import expecttest
 
+
 def sh(file: str, accept: bool = False) -> subprocess.CompletedProcess:  # type: ignore[type-arg]
     env = ""
     if accept:
@@ -245,6 +246,20 @@ Accepting new output at test.py:5
             finally:
                 os.environ.clear()
                 os.environ.update(env)
+
+    def test_smoketest_expected_objects(self) -> None:
+        with smoketest("accept_expected.py") as test_py:
+            r = sh(test_py)
+            self.assertNotEqual(r.returncode, 0)
+            r = sh(test_py, accept=True)
+            self.assertExpectedInline(
+                r.stdout.replace(test_py, "test.py"),
+                """\
+Accepting new output at test.py:5
+""",
+            )
+            r = sh(test_py)
+            self.assertEqual(r.returncode, 0)
 
 
 def load_tests(

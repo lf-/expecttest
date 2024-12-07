@@ -218,6 +218,40 @@ def assert_eq(expect: str, actual: str, *, msg: str) -> None:
         )
 
 
+class Expect:
+    """
+    An expected string literal, analogous to expect_test::expect! in Rust.
+
+    This saves its position so that you can pass it around for e.g.
+    parameterized tests and similar.
+
+    Example:
+    >>> e = Expect("value") # expected value
+    >>> e.assert_expected("value") # actual value
+    """
+    def __init__(self, expected: str, *, skip: int = 0):
+        """
+        Creates an expectation of the given value.
+        """
+        # n.b. this is not a dataclass because it seems like it would expose
+        # us to being broken by dataclasses internals changes.
+        self.expected = expected
+
+        # current frame and parent frame, plus any requested skip
+        tb = traceback.extract_stack(limit=2 + skip)
+        fn, lineno, _, _ = tb[0]
+        self.pos = PositionInfo(fn, lineno)
+
+    def assert_expected(self, actual: str) -> None:
+        assert_expected_inline(actual, self.expected, pos=self.pos)
+
+    def __repr__(self) -> str:
+        return f"Expect({self.expected!r})"
+
+    def __str__(self) -> str:
+        return self.expected
+
+
 @dataclasses.dataclass
 class PositionInfo:
     filename: str
