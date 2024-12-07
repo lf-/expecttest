@@ -17,7 +17,7 @@ The general recipe for how to use this is as follows:
   1. Write your test and use `assertExpectedInline()` instead of a normal
      `assertEqual`.  Leave the expected argument blank with an empty string:
      ```py
-     self.assertExpectedInline(some_func(), "")
+     self.assertExpectedInline(some_func(), """""")
      ```
 
   2. Run your test.  It should fail, and you get an error message about
@@ -26,7 +26,7 @@ The general recipe for how to use this is as follows:
   3. Rerun the test with `EXPECTTEST_ACCEPT=1`.  Now the previously blank string
      literal will contain the expected value of the test.
      ```py
-     self.assertExpectedInline(some_func(), "my_value")
+     self.assertExpectedInline(some_func(), """my_value""")
      ```
 ## A minimal working example
 
