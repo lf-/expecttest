@@ -6,6 +6,7 @@ import sys
 import traceback
 import unittest
 import difflib
+import dataclasses
 from typing import Any, Callable, Dict, List, Match, Tuple, Optional
 
 # NB: We do not internally use this property for anything, but it
@@ -217,25 +218,33 @@ def assert_eq(expect: str, actual: str, *, msg: str) -> None:
         )
 
 
+@dataclasses.dataclass
+class PositionInfo:
+    filename: str
+    lineno: int
+
+    def __str__(self) -> str:
+        return f"{self.filename}:{self.lineno}"
+
+
 def _accept_output(
-    fn: str,
-    lineno: int,
+    pos: PositionInfo,
     actual: str,
     debug_suffix: str,
 ) -> None:
     """
-    Replaces the string literal in file "fn" at lineno with the new string
-    "actual".
+    Replaces the string literal at "pos" (according to the interpreter) with
+    the new string "actual".
     """
-    print("Accepting new output{} at {}:{}".format(debug_suffix, fn, lineno))
-    with open(fn, "r+") as f:
+    print("Accepting new output{} at {}".format(debug_suffix, pos))
+    with open(pos.filename, "r+") as f:
         old = f.read()
         old_ast = ast.parse(old)
 
         # NB: it's only the traceback line numbers that are wrong;
         # we reread the file every time we write to it, so AST's
         # line numbers are correct
-        lineno = EDIT_HISTORY.adjust_lineno(fn, lineno)
+        lineno = EDIT_HISTORY.adjust_lineno(pos.filename, pos.lineno)
 
         # Conservative assumption to start
         start_lineno = lineno
@@ -258,23 +267,23 @@ def _accept_output(
         )
 
         assert old != new, (
-            f"Failed to substitute string at {fn}:{lineno}; did you use triple quotes?  "
+            f"Failed to substitute string at {pos}; did you use triple quotes?  "
             "If this is unexpected, please file a bug report at "
             "https://github.com/ezyang/expecttest/issues/new "
-            f"with the contents of the source file near {fn}:{lineno}"
+            f"with the contents of the source file near {pos}"
         )
 
         # Only write the backup file the first time we hit the
         # file
-        if not EDIT_HISTORY.seen_file(fn):
-            with open(fn + ".bak", "w") as f_bak:
+        if not EDIT_HISTORY.seen_file(pos.filename):
+            with open(pos.filename + ".bak", "w") as f_bak:
                 f_bak.write(old)
         f.seek(0)
         f.truncate(0)
 
         f.write(new)
 
-    EDIT_HISTORY.record_edit(fn, lineno, delta, actual)
+    EDIT_HISTORY.record_edit(pos.filename, lineno, delta, actual)
 
 
 def assert_expected_inline(
@@ -282,6 +291,7 @@ def assert_expected_inline(
     expect: str,
     skip: int = 0,
     *,
+    pos: Optional[PositionInfo] = None,
     expect_filters: Optional[Dict[str, str]] = None,
     assert_eq: Any = assert_eq,
     debug_id: str = "",
@@ -305,23 +315,26 @@ def assert_expected_inline(
     # of os.environ to be picked up
     if os.getenv("EXPECTTEST_ACCEPT"):
         if actual != expect:
-            # current frame and parent frame, plus any requested skip
-            tb = traceback.extract_stack(limit=2 + skip)
-            fn, lineno, _, _ = tb[0]
+            if not pos:
+                # current frame and parent frame, plus any requested skip
+                tb = traceback.extract_stack(limit=2 + skip)
+                fn, lineno, _, _ = tb[0]
+                pos = PositionInfo(fn, lineno)
+
             debug_suffix = "" if not debug_id else f" for {debug_id}"
-            if (prev_actual := EDIT_HISTORY.seen_edit(fn, lineno)) is not None:
+            if (prev_actual := EDIT_HISTORY.seen_edit(pos.filename, pos.lineno)) is not None:
                 assert_eq(
                     actual,
                     prev_actual,
-                    msg=f"Uh oh, accepting different values{debug_suffix} at {fn}:{lineno}.  Are you running a parametrized test?  If so, you need a separate assertExpectedInline invocation per distinct output.",
+                    msg=f"Uh oh, accepting different values{debug_suffix} at {pos}.  Are you running a parametrized test?  If so, you need a separate assertExpectedInline invocation per distinct output.",
                 )
                 print(
-                    "Skipping already accepted output{} at {}:{}".format(
-                        debug_suffix, fn, lineno
+                    "Skipping already accepted output{} at {}".format(
+                        debug_suffix, pos
                     )
                 )
                 return
-            _accept_output(fn=fn, lineno=lineno, actual=actual, debug_suffix=debug_suffix)
+            _accept_output(pos=pos, actual=actual, debug_suffix=debug_suffix)
     else:
         help_text = (
             "To accept the new output, re-run test with "
